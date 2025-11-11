@@ -115,7 +115,7 @@ function deleteTransaction(index){
 function addProduct(name,price){const id = products.length?Math.max(...products.map(p=>p.id))+1:1; products.push({id,name,price:Number(price)}); saveProducts(); renderProducts();}
 
 /* Import from spreadsheet (xlsx/csv) using SheetJS (xlsx) */
-function importProductsFromRows(rows){
+function importProductsFromRows(rows, hasSubtotal=false){
   if(!Array.isArray(rows) || rows.length===0) return 0
   // Normalize keys for detection (map original key -> lowerKey)
   const first = rows[0]
@@ -124,6 +124,8 @@ function importProductsFromRows(rows){
   const findKey = (regex)=> Object.keys(keyMap).find(k=> regex.test(keyMap[k]))
   const nameKey = findKey(/name|nama|product|produk/)
   const priceKey = findKey(/price|harga|rp|amount|price_id/)
+  const qtyKey = hasSubtotal ? findKey(/qty|kuantitas|quantity|jumlah|jml/) : null
+  const subtotalKey = hasSubtotal ? findKey(/subtotal|sub_total|total/) : null
   let added = 0
   rows.forEach(r=>{
     // get raw values using detected keys or try fallback to first two columns
@@ -141,7 +143,22 @@ function importProductsFromRows(rows){
     // sanitize price (remove common separators and non-numeric chars)
     const priceStr = String(priceRaw || '').replace(/[,\s]/g,'').replace(/\.(?=.*\.)/g,'')
     const price = Number(String(priceStr).replace(/[^0-9\.-]/g,'')) || 0
-    addProduct(String(name).trim(), price)
+    
+    // For Excel files with subtotal, calculate price from subtotal/qty if available
+    let finalPrice = price
+    if(hasSubtotal && subtotalKey && qtyKey){
+      const subtotalRaw = r[subtotalKey]
+      const qtyRaw = r[qtyKey]
+      if(subtotalRaw && qtyRaw){
+        const subtotal = Number(String(subtotalRaw).replace(/[^0-9\.-]/g,'')) || 0
+        const qty = Number(String(qtyRaw).replace(/[^0-9\.-]/g,'')) || 1
+        if(subtotal > 0 && qty > 0){
+          finalPrice = Math.round(subtotal / qty)
+        }
+      }
+    }
+    
+    addProduct(String(name).trim(), finalPrice)
     added++
   })
   return added
@@ -196,7 +213,7 @@ function parseAndImportFile(file){
         const firstSheet = workbook.SheetNames[0]
         const sheet = workbook.Sheets[firstSheet]
         const rows = XLSX.utils.sheet_to_json(sheet, {defval: ''})
-        const added = importProductsFromRows(rows)
+        const added = importProductsFromRows(rows, true)
         if(added) alert(`${added} produk berhasil diimpor.`)
         else alert('Tidak ada produk yang dikenali dalam file. Pastikan file memiliki kolom nama dan harga.')
         setStatus(added? `${added} produk diimpor.` : 'Tidak ada produk diimpor.')
@@ -253,6 +270,43 @@ function exportTransactionsCSV(){const tx = loadTransactions(); if(tx.length===0
   const a = document.createElement('a'); a.href=url; a.download = 'transactions.csv'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url)
 }
 
+function exportTransactionsXLSX(){const tx = loadTransactions(); if(tx.length===0) return alert('Tidak ada transaksi')
+  if(typeof XLSX === 'undefined') return alert('Library XLSX tidak tersedia. Muat halaman ulang.')
+  const data = [['No.','Waktu','Item','Qty','Harga Satuan','Subtotal']]
+  let rowNum = 1
+  tx.forEach((t, txIdx)=>{
+    t.items.forEach((item, itemIdx)=>{
+      const subtotal = item.qty * item.price
+      data.push([
+        txIdx + 1,
+        itemIdx === 0 ? new Date(t.ts).toLocaleString('id-ID') : '',
+        item.name,
+        item.qty,
+        item.price,
+        subtotal
+      ])
+    })
+    if(t.items.length > 0){
+      data.push(['','','TOTAL TRANSAKSI','','',t.total])
+      data.push(['','','','','',''])
+    }
+  })
+  const ws = XLSX.utils.aoa_to_sheet(data)
+  ws['!cols'] = [{wch:5},{wch:20},{wch:35},{wch:8},{wch:15},{wch:15}]
+  
+  // Style header
+  const headerStyle = {fill:{fgColor:{rgb:'217B79'}},font:{bold:true,color:{rgb:'FFFFFF'}},alignment:{horizontal:'center',vertical:'center'}}
+  for(let col = 0; col < 6; col++){
+    const cellRef = XLSX.utils.encode_col(col) + '1'
+    if(!ws[cellRef]) ws[cellRef] = {}
+    ws[cellRef].s = headerStyle
+  }
+  
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'Transaksi')
+  XLSX.writeFile(wb, `transactions_${new Date().toISOString().split('T')[0]}.xlsx`)
+}
+
 /* Wiring */
 window.addEventListener('DOMContentLoaded', ()=>{
   initTheme();
@@ -301,6 +355,7 @@ window.addEventListener('DOMContentLoaded', ()=>{
   document.getElementById('checkout').addEventListener('click', ()=>{if(confirm('Lanjutkan pembayaran?')) checkout()})
   document.getElementById('clear-cart').addEventListener('click', ()=>{if(confirm('Kosongkan keranjang?')) clearCart()})
   document.getElementById('export-transactions').addEventListener('click', exportTransactionsCSV)
+  document.getElementById('export-transactions-xlsx').addEventListener('click', exportTransactionsXLSX)
 
   const themeBtn = document.getElementById('theme-toggle')
   if(themeBtn){
@@ -324,3 +379,184 @@ window.addEventListener('DOMContentLoaded', ()=>{
     })
   }
 })
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#217b79" />
+  <title>Sistem Kasir Sederhana</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="bento">
+  <header>
+    <div class="header-left">
+      <h1>Sistem Kasir Sederhana</h1>
+      <p>Offline-ready. Data disimpan di localStorage. Deploy: GitHub Pages punya Bohex21.</p>
+    </div>
+    <div class="header-actions">
+      <button id="theme-toggle" aria-label="Toggle theme" title="Toggle dark / light">🌙</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="products">
+      <h2>Produk</h2>
+      <div class="import-area">
+        <label for="import-file" class="import-label">Import Excel / CSV</label>
+        <input id="import-file" type="file" accept=".xlsx,.xls,.csv" />
+        <small class="import-help">File: kolom nama & harga (header: nama/name, harga/price)</small>
+        <div id="import-status" class="import-status" aria-live="polite"></div>
+      </div>
+
+      <form id="add-product-form">
+        <input id="p-name" placeholder="Nama produk" required />
+        <input id="p-price" placeholder="Harga" type="number" min="0" required />
+        <button type="submit">Tambah Produk</button>
+      </form>
+
+      <table id="products-table">
+        <thead>
+          <tr>
+            <th>Nama</th>
+            <th>Harga</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+  <section class="cart">
+      <h2>Keranjang</h2>
+      <table id="cart-table">
+        <thead><tr><th>Nama</th><th>Qty</th><th>Harga</th><th>Subtotal</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="cart-summary">
+        <div>Total: Rp <span id="total">0</span></div>
+        <button id="checkout">Bayar</button>
+        <button id="clear-cart">Kosongkan</button>
+      </div>
+    </section>
+
+  <section class="transactions">
+      <h2>Transaksi</h2>
+      <div class="export-buttons">
+        <button id="export-transactions">Ekspor CSV Transaksi</button>
+        <button id="export-transactions-xlsx">Ekspor XLSX Transaksi</button>
+      </div>
+      <table id="transactions-table">
+        <thead>
+          <tr>
+            <th>Waktu</th>
+            <th>Items</th>
+            <th>Total</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </main>
+
+  <footer>
+    <small>Simple POS — offline.BOHEXPOENYA.</small>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
+:root{
+	--bg:#f6fbfb;
+	--card:#ffffff;
+	--muted:#6b7280;
+	--accent:#217b79;
+	--accent-600:#1b6a67;
+	--glass:rgba(33,123,121,0.06);
+	--radius:12px;
+}
+
+*{box-sizing:border-box;font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial}
+body{margin:0;padding:0;background:linear-gradient(180deg,var(--bg),#eef7f6);color:#0f172a;min-height:100vh}
+header{background:linear-gradient(90deg,var(--accent),var(--accent-600));color:#fff;padding:1.25rem 1rem;border-bottom-left-radius:16px;border-bottom-right-radius:16px}
+header h1{margin:0;font-weight:600;letter-spacing:0.2px}
+header p{margin:0.25rem 0 0;font-size:0.95rem;opacity:0.95}
+
+.container{display:grid;grid-template-columns:1.2fr 1fr;gap:1rem;padding:1rem;max-width:1200px;margin:1rem auto}
+
+section{background:var(--card);padding:1rem;border-radius:var(--radius);box-shadow:0 6px 18px var(--glass);border:1px solid rgba(15,23,42,0.03)}
+
+/* header layout */
+header{display:flex;justify-content:space-between;align-items:center}
+.header-left{display:flex;flex-direction:column}
+.header-actions button#theme-toggle{background:transparent;border:1px solid rgba(15,23,42,0.06);padding:.45rem .6rem;border-radius:10px;font-size:1rem;cursor:pointer}
+.header-actions button#theme-toggle:hover{transform:translateY(-2px);box-shadow:0 6px 12px rgba(33,123,121,0.08)}
+
+
+.products form{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
+.products input{flex:1;padding:.6rem .75rem;border-radius:10px;border:1px solid #e6eef0;background:#fbfeff}
+.products button{padding:.6rem .9rem;border-radius:10px}
+
+.import-area{display:flex;align-items:center;gap:.6rem;margin-bottom:0.6rem}
+.import-area input[type="file"]{border:1px dashed rgba(15,23,42,0.06);padding:.45rem;border-radius:8px;background:#fff}
+.import-label{font-weight:600;color:var(--muted)}
+.import-help{color:var(--muted);font-size:.85rem}
+ .import-status{margin-left:0.5rem;color:var(--muted);font-size:.85rem}
+ .import-status.error{color:#b91c1c}
+ .import-status.ok{color:var(--accent-600)}
+
+table{width:100%;border-collapse:separate;border-spacing:0;margin-top:.6rem}
+thead th{background:transparent;padding:.5rem .6rem;text-align:left;font-size:.85rem;color:var(--muted);font-weight:600}
+tbody tr{transition:transform .12s ease, box-shadow .12s ease}
+tbody tr:hover{transform:translateY(-4px);box-shadow:0 8px 18px rgba(16,24,40,0.06)}
+td,th{padding:.6rem .6rem;border-bottom:0}
+
+.products table thead th:last-child, .cart table thead th:last-child{width:90px;text-align:center}
+
+button{padding:.48rem .8rem;border:0;background:var(--accent);color:#fff;border-radius:10px;cursor:pointer;box-shadow:0 6px 12px rgba(33,123,121,0.12);transition:transform .08s ease}
+button:hover{transform:translateY(-2px)}
+button.secondary{background:#64748b}
+
+.cart-summary{display:flex;flex-direction:row;justify-content:space-between;align-items:center;margin-top:0.8rem}
+#total{font-weight:700;color:var(--accent)}
+
+.products .add-to-cart, .cart .remove-cart{background:linear-gradient(180deg,#34b3a9,#217b79);padding:.4rem .6rem;border-radius:8px}
+.cart .remove-cart{background:linear-gradient(180deg,#ef4444,#dc2626)}
+.products .delete-product{background:linear-gradient(180deg,#ef4444,#dc2626);padding:.4rem .6rem;border-radius:8px}
+.products .delete-product:hover{transform:translateY(-2px)}
+
+.export-buttons{display:flex;gap:.5rem;margin-bottom:.5rem;flex-wrap:wrap}
+.export-buttons button{margin-bottom:0}
+
+.transactions button{margin-bottom:.5rem}
+
+.transactions .delete-tx{background:linear-gradient(180deg,#ef4444,#dc2626);padding:.4rem .6rem;border-radius:8px}
+.transactions .delete-tx:hover{transform:translateY(-2px)}
+
+@media(max-width:1000px){.container{grid-template-columns:1fr;padding:0.8rem}}
+
+/* small card-like product list on top when screen is narrow */
+@media(max-width:640px){
+	.products table, .cart table, .transactions table{font-size:.95rem}
+}
+
+/* Dark theme overrides */
+body.dark{
+	--bg:#0b1220;
+	--card:#0f1724;
+	--muted:#94a3b8;
+	--accent:#06b6a4;
+	--accent-600:#089189;
+	--glass:rgba(2,6,23,0.6);
+	color:#e6eef7;
+	background:linear-gradient(180deg,#071023,#071827);
+}
+
+body.dark header{background:linear-gradient(90deg,var(--accent-600),#064e4a)}
+body.dark .header-actions button#theme-toggle{border-color:rgba(255,255,255,0.06);color:#fff}
+body.dark section{box-shadow:0 10px 30px rgba(2,6,23,0.6);border:1px solid rgba(255,255,255,0.03)}
+body.dark button{box-shadow:0 6px 12px rgba(3,7,18,0.4)}
