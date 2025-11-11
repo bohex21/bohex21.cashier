@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#217b79" />
+  <title>Sistem Kasir Sederhana</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="bento">
+  <header>
+    <div class="header-left">
+      <h1>Sistem Kasir Sederhana</h1>
+      <p>Offline-ready. Data disimpan di localStorage. Deploy: GitHub Pages punya Bohex21.</p>
+    </div>
+    <div class="header-actions">
+      <button id="theme-toggle" aria-label="Toggle theme" title="Toggle dark / light">🌙</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="products">
+      <h2>Produk</h2>
+      <div class="import-area">
+        <label for="import-file" class="import-label">Import Excel / CSV</label>
+        <input id="import-file" type="file" accept=".xlsx,.xls,.csv" />
+        <small class="import-help">File: kolom nama & harga (header: nama/name, harga/price)</small>
+        <div id="import-status" class="import-status" aria-live="polite"></div>
+      </div>
+
+      <form id="add-product-form">
+        <input id="p-name" placeholder="Nama produk" required />
+        <input id="p-price" placeholder="Harga" type="number" min="0" required />
+        <button type="submit">Tambah Produk</button>
+      </form>
+
+      <table id="products-table">
+        <thead>
+          <tr>
+            <th>Nama</th>
+            <th>Harga</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+  <section class="cart">
+      <h2>Keranjang</h2>
+      <table id="cart-table">
+        <thead><tr><th>Nama</th><th>Qty</th><th>Harga</th><th>Subtotal</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="cart-summary">
+        <div>Total: Rp <span id="total">0</span></div>
+        <button id="checkout">Bayar</button>
+        <button id="clear-cart">Kosongkan</button>
+      </div>
+    </section>
+
+  <section class="transactions">
+      <h2>Transaksi</h2>
+      <div class="export-buttons">
+        <button id="export-transactions">Ekspor CSV Transaksi</button>
+        <button id="export-transactions-xlsx">Ekspor XLSX Transaksi</button>
+      </div>
+      <table id="transactions-table">
+        <thead>
+          <tr>
+            <th>Waktu</th>
+            <th>Items</th>
+            <th>Total</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </main>
+
+  <footer>
+    <small>Simple POS — offline.BOHEXPOENYA.</small>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
